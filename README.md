@@ -9,7 +9,7 @@ A modern, lightweight Nginx reverse proxy management tool featuring a Persian We
 Run this command as `root` on any fresh Ubuntu/Debian server:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/monhacer/aionginx/main/install.sh | bash
+curl -sSL [https://raw.githubusercontent.com/monhacer/aionginx/main/install.sh](https://raw.githubusercontent.com/monhacer/aionginx/main/install.sh) | bash
 ```
 
 ---
