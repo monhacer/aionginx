@@ -78,6 +78,21 @@ if [ ! -f /opt/nginx-manager/auth.json ]; then
 EOF
 fi
 
+# Default single route (2053)
+if [ ! -f /opt/nginx-manager/routes.json ]; then
+  cat << 'EOF' > /opt/nginx-manager/routes.json
+[
+  {
+    "id": 1,
+    "listenPort": 80,
+    "path": "/",
+    "targetPort": 2053,
+    "desc": "مسیر روت پیش‌فرض"
+  }
+]
+EOF
+fi
+
 # 4. Open firewall port if UFW is active
 if command -v ufw >/dev/null 2>&1; then
   if ufw status | grep -q "Status: active"; then
