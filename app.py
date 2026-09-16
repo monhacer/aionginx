@@ -9,13 +9,9 @@ DATA_FILE = "/opt/nginx-manager/routes.json"
 AUTH_FILE = "/opt/nginx-manager/auth.json"
 NGINX_CONF_PATH = "/etc/nginx/sites-available/default"
 
+# تنها مسیر پیش‌فرض: پورت 2053 روی مسیر روت
 DEFAULT_ROUTES = [
-    {"id": 1, "listenPort": 80, "path": "/dk", "targetPort": 110, "desc": "سرویس دانمارک"},
-    {"id": 2, "listenPort": 80, "path": "/sg", "targetPort": 995, "desc": "سرویس سنگاپور"},
-    {"id": 3, "listenPort": 80, "path": "/nl", "targetPort": 993, "desc": "سرویس هلند"},
-    {"id": 4, "listenPort": 80, "path": "/pro", "targetPort": 446, "desc": "پروکسی پرو"},
-    {"id": 5, "listenPort": 80, "path": "/combapi", "targetPort": 445, "desc": "API ترکیبی"},
-    {"id": 6, "listenPort": 80, "path": "/", "targetPort": 2053, "desc": "مسیر روت پیش‌فرض"}
+    {"id": 1, "listenPort": 80, "path": "/", "targetPort": 2053, "desc": "مسیر روت پیش‌فرض"}
 ]
 
 def load_auth():
