@@ -222,6 +222,10 @@
                         <span class="text-xs text-[#8e919a]">تغییر دستی بلوک‌ها و دستورات Nginx</span>
                     </div>
                     <div class="flex items-center gap-2">
+                        <button onclick="generateConfigFromRoutes()" 
+                                class="m3-btn h-8 px-3 rounded-xl text-xs text-[#a8c7fa] hover:bg-[#20232b] border border-[#a8c7fa]/40">
+                            تولید مجدد بر اساس مسیرها
+                        </button>
                         <button onclick="fetchRawConfig()" 
                                 class="m3-btn h-8 px-3 rounded-xl text-xs text-[#8e919a] hover:text-[#e2e2e9] bg-[#20232b] border border-[#44474f]/40">
                             بازخوانی از سرور
@@ -437,6 +441,7 @@
                 if (res.ok) {
                     showAlert('به‌روزرسانی', 'تغییرات ذخیره و روی انجینکس اعمال گردید', 'success');
                     renderRoutes();
+                    fetchRawConfig();
                 } else {
                     showAlert('خطا در انجینکس', data.message, 'error');
                 }
@@ -453,6 +458,32 @@
             } catch (err) {
                 showAlert('خطا', 'عدم توانایی در دریافت متن کانفیگ', 'error');
             }
+        }
+
+        function generateConfigFromRoutes() {
+            if (!routes || routes.length === 0) {
+                showAlert('خطا', 'هیچ مسیری در جدول وجود ندارد', 'warning');
+                return;
+            }
+            const ports = [...new Set(routes.map(r => r.listenPort))];
+            let fullConfig = '';
+
+            ports.forEach(port => {
+                const portRoutes = routes.filter(r => r.listenPort === port);
+                const sorted = [...portRoutes].sort((a, b) => (a.path === '/' ? 1 : b.path === '/' ? -1 : 0));
+                let locations = '';
+
+                sorted.forEach(r => {
+                    const comment = r.desc ? `    # ${r.desc}\n` : '';
+                    const loc = r.path === '/' ? 'location /' : `location ^~ ${r.path}`;
+                    locations += `${comment}    ${loc} {\n        proxy_pass http://127.0.0.1:${r.targetPort};\n        proxy_http_version 1.1;\n        proxy_set_header Host $host;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection "upgrade";\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_read_timeout 86400s;\n        proxy_send_timeout 86400s;\n        proxy_connect_timeout 10s;\n        proxy_buffering off;\n    }\n\n`;
+                });
+
+                fullConfig += `server {\n    listen ${port};\n    listen [::]:${port};\n    server_name _;\n    client_max_body_size 0;\n    proxy_intercept_errors off;\n\n${locations}}\n\n`;
+            });
+
+            document.getElementById('nginx-editor').value = fullConfig.trim();
+            showAlert('همگام‌سازی شد', 'کد کانفیگ ادیتور بر اساس روت‌های فعال جدول بازتولید شد', 'info');
         }
 
         async function saveDirectConfig() {
