@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مدیریت مسیرهای Nginx</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
+
+    <style>
+        * {
+            font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --md-sys-color-background: #111318;
+            --md-sys-color-surface: #1a1c22;
+            --md-sys-color-surface-container: #20232b;
+            --md-sys-color-surface-container-high: #2b2e38;
+            --md-sys-color-primary: #a8c7fa;
+            --md-sys-color-on-primary: #062e6f;
+            --md-sys-color-outline: #8e919a;
+            --md-sys-color-outline-variant: #44474f;
+            --md-sys-color-error: #f2b8b5;
+            --md-sys-color-on-error: #601410;
+        }
+
+        body {
+            background-color: var(--md-sys-color-background);
+            color: #e2e2e9;
+        }
+
+        input, select, button, textarea {
+            font-family: inherit !important;
+        }
+
+        .m3-btn {
+            transition: background-color 0.2s cubic-bezier(0.2, 0, 0, 1), transform 0.1s;
+        }
+        .m3-btn:active {
+            transform: scale(0.98);
+        }
+
+        .m3-input {
+            background-color: var(--md-sys-color-surface-container);
+            border: 1px solid var(--md-sys-color-outline-variant);
+            border-radius: 0.75rem;
+            transition: border-color 0.2s, background-color 0.2s;
+        }
+        .m3-input:focus {
+            border-color: var(--md-sys-color-primary);
+            background-color: var(--md-sys-color-surface-container-high);
+            outline: none;
+        }
+
+        .code-font {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+        }
+
+        @keyframes slideInUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-toast-in {
+            animation: slideInUp 0.25s cubic-bezier(0, 0, 0.2, 1) forwards;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-blue-500/30">
+
+    <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+    <div id="confirm-modal" class="fixed inset-0 z-50 hidden bg-black/60 flex items-center justify-center p-4">
+        <div class="bg-[#1a1c22] w-full max-w-sm rounded-3xl p-6 border border-[#44474f]/40 shadow-2xl">
+            <h3 id="confirm-title" class="text-sm font-bold text-[#e2e2e9] mb-2">تأیید عملیات</h3>
+            <p id="confirm-desc" class="text-xs text-[#8e919a] mb-6 leading-relaxed">آیا از انجام این عملیات اطمینان دارید؟</p>
+            <div class="flex items-center justify-end gap-2">
+                <button id="confirm-cancel-btn" class="m3-btn h-9 px-4 rounded-xl text-xs text-[#8e919a] hover:bg-[#2b2e38]">انصراف</button>
+                <button id="confirm-accept-btn" class="m3-btn h-9 px-5 rounded-xl bg-[#f2b8b5] text-[#601410] font-semibold text-xs hover:brightness-95">تأیید</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="login-view" class="fixed inset-0 z-40 flex items-center justify-center bg-[#111318] p-4">
+        <div class="w-full max-w-sm sm:max-w-md bg-[#1a1c22] rounded-3xl p-6 sm:p-8 border border-[#44474f]/30 shadow-2xl">
+            <div class="mb-6 border-b border-[#44474f]/30 pb-4 text-center sm:text-right">
+                <h1 class="text-xl font-bold text-[#e2e2e9]">ورود به پنل Nginx</h1>
+                <p class="text-xs text-[#8e919a] mt-1.5">اطلاعات حساب سرور خود را وارد کنید</p>
+            </div>
+
+            <form id="login-form" class="space-y-4" onsubmit="handleLogin(event)">
+                <div>
+                    <label class="block text-xs text-[#a8c7fa] mb-1.5 font-medium">نام کاربری</label>
+                    <input type="text" id="login-username" value="admin" required
+                           class="m3-input w-full h-11 px-4 text-sm text-[#e2e2e9]" />
+                </div>
+                <div>
+                    <label class="block text-xs text-[#a8c7fa] mb-1.5 font-medium">رمز عبور</label>
+                    <input type="password" id="login-password" value="admin" required
+                           class="m3-input w-full h-11 px-4 text-sm text-[#e2e2e9]" />
+                </div>
+
+                <div id="login-error" class="hidden p-3 rounded-xl bg-[#601410]/50 border border-[#f2b8b5]/20 text-[#f2b8b5] text-xs text-center">
+                    نام کاربری یا رمز عبور نادرست است
+                </div>
+
+                <button type="submit" 
+                        class="m3-btn w-full h-11 mt-3 rounded-xl bg-[#a8c7fa] text-[#062e6f] font-semibold text-sm hover:brightness-105 shadow-md flex items-center justify-center">
+                    ورود به پنل
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div id="app-view" class="hidden flex-col min-h-screen">
+        <header class="bg-[#1a1c22] border-b border-[#44474f]/30 px-4 sm:px-8 py-3 sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-6">
+                <div>
+                    <h1 class="text-sm font-bold text-[#e2e2e9]">سامانه مدیریت پروکسی Nginx</h1>
+                    <span class="text-[11px] text-[#8e919a] block">پیکربندی روت‌ها، پورت‌ها و سرویس</span>
+                </div>
+                <nav class="flex items-center gap-1.5 bg-[#20232b] p-1 rounded-xl border border-[#44474f]/30">
+                    <button id="tab-routes-btn" onclick="switchTab('routes')" 
+                            class="px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors bg-[#a8c7fa] text-[#062e6f]">
+                        مسیرها
+                    </button>
+                    <button id="tab-advanced-btn" onclick="switchTab('advanced')" 
+                            class="px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors text-[#8e919a] hover:text-[#e2e2e9]">
+                        پیشرفته
+                    </button>
+                </nav>
+            </div>
+
+            <div>
+                <button onclick="logout()" 
+                        class="m3-btn h-9 px-4 rounded-xl text-xs font-medium text-[#f2b8b5] bg-[#601410]/30 hover:bg-[#601410]/50 border border-[#f2b8b5]/20 flex items-center justify-center">
+                    خروج
+                </button>
+            </div>
+        </header>
+
+        <main id="view-routes" class="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-8 space-y-6">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="bg-[#1a1c22] border border-[#44474f]/30 p-5 rounded-2xl flex flex-col justify-between h-24">
+                    <span class="text-xs text-[#8e919a]">تعداد کل مسیرها</span>
+                    <span id="stat-total" class="text-2xl font-bold text-[#e2e2e9]">۰</span>
+                </div>
+
+                <div class="bg-[#1a1c22] border border-[#44474f]/30 p-5 rounded-2xl flex flex-col justify-between h-24">
+                    <span class="text-xs text-[#8e919a]">پورت‌های ورودی فعال</span>
+                    <span id="stat-ports" class="text-2xl font-bold text-[#e2e2e9]">۰</span>
+                </div>
+
+                <div class="bg-[#1a1c22] border border-[#44474f]/30 p-5 rounded-2xl flex flex-col justify-between h-24">
+                    <span class="text-xs text-[#8e919a]">وضعیت انجینکس</span>
+                    <span id="service-status-text" class="text-sm font-bold text-emerald-400">فعال و در حال اجرا</span>
+                </div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                <div class="flex-1 max-w-sm">
+                    <input type="text" id="search-input" oninput="renderRoutes()" placeholder="جستجو در مسیرها، پورت‌ها و..." 
+                           class="m3-input w-full h-10 px-4 text-xs text-[#e2e2e9]" />
+                </div>
+
+                <button onclick="openModal()" 
+                        class="m3-btn h-10 px-5 rounded-xl bg-[#a8c7fa] text-[#062e6f] text-xs font-semibold hover:brightness-105 shadow flex items-center justify-center">
+                    تعریف مسیر جدید
+                </button>
+            </div>
+
+            <div class="bg-[#1a1c22] border border-[#44474f]/30 rounded-2xl overflow-hidden shadow-lg">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-right text-xs">
+                        <thead>
+                            <tr class="bg-[#20232b] text-[#8e919a] border-b border-[#44474f]/30">
+                                <th class="py-3.5 px-5 font-medium">پورت ورودی</th>
+                                <th class="py-3.5 px-5 font-medium">مسیر (Path)</th>
+                                <th class="py-3.5 px-5 font-medium">پورت مقصد داخلی</th>
+                                <th class="py-3.5 px-5 font-medium">توضیحات</th>
+                                <th class="py-3.5 px-5 font-medium text-center">عملیات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="routes-table-body" class="divide-y divide-[#44474f]/20"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+
+        <main id="view-advanced" class="hidden flex-1 max-w-6xl w-full mx-auto p-4 sm:p-8 space-y-6">
+            <div class="bg-[#1a1c22] border border-[#44474f]/30 p-5 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-sm font-bold text-[#e2e2e9]">عملیات سرویس انجینکس</h2>
+                    <p class="text-xs text-[#8e919a] mt-1">مدیریت اجرای پردازه و تست فایل‌های کانفیگ سرور</p>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2">
+                    <button onclick="nginxAction('test')" 
+                            class="m3-btn h-9 px-3.5 rounded-xl text-xs font-medium text-[#a8c7fa] bg-[#a8c7fa]/10 hover:bg-[#a8c7fa]/20 border border-[#a8c7fa]/30 flex items-center">
+                        تست کانفیگ (nginx -t)
+                    </button>
+                    <button onclick="nginxAction('reload')" 
+                            class="m3-btn h-9 px-3.5 rounded-xl text-xs font-medium text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 flex items-center">
+                        بارگذاری مجدد (Reload)
+                    </button>
+                    <button onclick="nginxAction('restart')" 
+                            class="m3-btn h-9 px-3.5 rounded-xl text-xs font-medium text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 flex items-center">
+                        راه‌اندازی مجدد (Restart)
+                    </button>
+                    <button onclick="nginxAction('stop')" 
+                            class="m3-btn h-9 px-3.5 rounded-xl text-xs font-medium text-[#f2b8b5] bg-[#601410]/30 hover:bg-[#601410]/50 border border-[#f2b8b5]/30 flex items-center">
+                        توقف سرور (Stop)
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-[#1a1c22] border border-[#44474f]/30 rounded-2xl p-5 space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#44474f]/30 pb-3">
+                    <div>
+                        <h2 class="text-sm font-bold text-[#e2e2e9]">ویرایشگر مستقیم فایل کانفیگ</h2>
+                        <span class="text-xs text-[#8e919a]">تغییر دستی بلوک‌ها و دستورات Nginx</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="fetchRawConfig()" 
+                                class="m3-btn h-8 px-3 rounded-xl text-xs text-[#8e919a] hover:text-[#e2e2e9] bg-[#20232b] border border-[#44474f]/40">
+                            بازخوانی از سرور
+                        </button>
+                        <button onclick="saveDirectConfig()" 
+                                class="m3-btn h-8 px-4 rounded-xl bg-[#a8c7fa] text-[#062e6f] font-semibold text-xs hover:brightness-105 shadow">
+                            ذخیره و اعمال
+                        </button>
+                    </div>
+                </div>
+
+                <div class="relative rounded-xl overflow-hidden border border-[#44474f]/40 bg-[#0d0e12]">
+                    <div class="bg-[#16181f] px-4 py-2 text-[11px] text-[#8e919a] border-b border-[#44474f]/30 flex justify-between items-center code-font">
+                        <span>/etc/nginx/sites-available/default</span>
+                        <span>CONF</span>
+                    </div>
+                    <textarea id="nginx-editor" rows="16" spellcheck="false" dir="ltr"
+                              class="w-full bg-transparent p-4 text-xs text-emerald-400 code-font leading-relaxed focus:outline-none resize-y"></textarea>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="route-modal" class="fixed inset-0 z-50 hidden bg-black/60 flex items-center justify-center p-4">
+        <div class="bg-[#1a1c22] w-full max-w-sm sm:max-w-md rounded-3xl p-6 border border-[#44474f]/40 shadow-2xl">
+            <div class="flex items-center justify-between mb-5 border-b border-[#44474f]/30 pb-3">
+                <h2 id="modal-title" class="text-sm font-bold text-[#e2e2e9]">تعریف مسیر جدید</h2>
+                <button onclick="closeModal()" class="text-xs text-[#8e919a] hover:text-[#e2e2e9]">بستن</button>
+            </div>
+
+            <form id="route-form" onsubmit="saveRoute(event)" class="space-y-3.5">
+                <input type="hidden" id="route-id" value="">
+
+                <div>
+                    <label class="block text-xs text-[#a8c7fa] mb-1 font-medium">پورت ورودی (Listen Port)</label>
+                    <input type="number" id="route-listen-port" required min="1" max="65535" value="80"
+                           class="m3-input w-full h-10 px-3 text-xs text-[#e2e2e9]" />
+                </div>
+
+                <div>
+                    <label class="block text-xs text-[#a8c7fa] mb-1 font-medium">مسیر (Path)</label>
+                    <input type="text" id="route-path" required placeholder="مثال: /dk یا /api" dir="ltr"
+                           class="m3-input w-full h-10 px-3 text-xs text-[#e2e2e9] text-left" />
+                </div>
+
+                <div>
+                    <label class="block text-xs text-[#a8c7fa] mb-1 font-medium">پورت مقصد داخلی (Target Port)</label>
+                    <input type="number" id="route-target-port" required min="1" max="65535" placeholder="مثال: 110"
+                           class="m3-input w-full h-10 px-3 text-xs text-[#e2e2e9]" />
+                </div>
+
+                <div>
+                    <label class="block text-xs text-[#8e919a] mb-1 font-medium">توضیحات (اختیاری)</label>
+                    <input type="text" id="route-desc" placeholder="مثلاً: سرویس دانمارک"
+                           class="m3-input w-full h-10 px-3 text-xs text-[#e2e2e9]" />
+                </div>
+
+                <div class="flex items-center justify-end gap-2 pt-3">
+                    <button type="button" onclick="closeModal()" 
+                            class="m3-btn h-9 px-4 rounded-xl text-xs text-[#8e919a] hover:bg-[#2b2e38]">انصراف</button>
+                    <button type="submit" 
+                            class="m3-btn h-9 px-5 rounded-xl bg-[#a8c7fa] text-[#062e6f] font-semibold text-xs">ذخیره تغییرات</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function toPersianDigits(n) {
+            if (n === null || n === undefined) return '';
+            const p = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+            return n.toString().replace(/\d/g, d => p[d]);
+        }
+
+        const toastThemes = {
+            success: { bg: 'bg-[#1b2b22]', border: 'border-emerald-500/40', text: 'text-emerald-300', title: 'text-emerald-400' },
+            error: { bg: 'bg-[#3b1210]', border: 'border-[#f2b8b5]/40', text: 'text-[#f2b8b5]', title: 'text-[#f2b8b5]' },
+            warning: { bg: 'bg-[#2e2300]', border: 'border-amber-500/40', text: 'text-amber-200', title: 'text-amber-300' },
+            info: { bg: 'bg-[#152338]', border: 'border-[#a8c7fa]/40', text: 'text-[#e2e2e9]', title: 'text-[#a8c7fa]' }
+        };
+
+        function showAlert(title, message, type = 'info', duration = 3500) {
+            const container = document.getElementById('toast-container');
+            const theme = toastThemes[type] || toastThemes.info;
+
+            const toast = document.createElement('div');
+            toast.className = `${theme.bg} ${theme.border} border p-4 rounded-2xl shadow-2xl pointer-events-auto animate-toast-in transition-all duration-300 flex flex-col justify-between`;
+            toast.innerHTML = `
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-bold ${theme.title}">${title}</span>
+                    <button onclick="this.parentElement.parentElement.remove()" class="text-[11px] text-[#8e919a] hover:text-[#e2e2e9] mr-2">بستن</button>
+                </div>
+                <p class="text-xs ${theme.text} leading-relaxed">${message}</p>
+            `;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(10px)';
+                setTimeout(() => toast.remove(), 300);
+            }, duration);
+        }
+
+        function customConfirm(title, desc, onConfirm) {
+            const modal = document.getElementById('confirm-modal');
+            document.getElementById('confirm-title').innerText = title;
+            document.getElementById('confirm-desc').innerText = desc;
+            modal.classList.remove('hidden');
+
+            const cleanup = () => {
+                modal.classList.add('hidden');
+                document.getElementById('confirm-cancel-btn').onclick = null;
+                document.getElementById('confirm-accept-btn').onclick = null;
+            };
+
+            document.getElementById('confirm-cancel-btn').onclick = () => cleanup();
+            document.getElementById('confirm-accept-btn').onclick = () => {
+                cleanup();
+                onConfirm();
+            };
+        }
+
+        let routes = [];
+
+        window.addEventListener('DOMContentLoaded', () => {
+            if (sessionStorage.getItem('nginx_auth') === 'true') {
+                showApp();
+            }
+        });
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const u = document.getElementById('login-username').value.trim();
+            const p = document.getElementById('login-password').value.trim();
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: u, password: p })
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    sessionStorage.setItem('nginx_auth', 'true');
+                    showApp();
+                    showAlert('ورود موفق', 'به سامانه مدیریت پروکسی خوش آمدید', 'success');
+                } else {
+                    document.getElementById('login-error').classList.remove('hidden');
+                    showAlert('خطای ورود', data.message, 'error');
+                }
+            } catch (err) {
+                showAlert('خطای شبکه', 'برقراری ارتباط با سرور با خطا مواجه شد', 'error');
+            }
+        }
+
+        function showApp() {
+            document.getElementById('login-view').classList.add('hidden');
+            document.getElementById('app-view').classList.remove('hidden');
+            document.getElementById('app-view').classList.add('flex');
+            fetchRoutes();
+            fetchRawConfig();
+        }
+
+        function logout() {
+            customConfirm('خروج از حساب', 'آیا مایل به خروج از سامانه مدیریت هستید؟', () => {
+                sessionStorage.removeItem('nginx_auth');
+                document.getElementById('app-view').classList.add('hidden');
+                document.getElementById('app-view').classList.remove('flex');
+                document.getElementById('login-view').classList.remove('hidden');
+                showAlert('خروج', 'از سامانه با موفقیت خارج شدید', 'info');
+            });
+        }
+
+        function switchTab(tab) {
+            const routesView = document.getElementById('view-routes');
+            const advView = document.getElementById('view-advanced');
+            const routesBtn = document.getElementById('tab-routes-btn');
+            const advBtn = document.getElementById('tab-advanced-btn');
+
+            if (tab === 'routes') {
+                routesView.classList.remove('hidden');
+                advView.classList.add('hidden');
+                routesBtn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors bg-[#a8c7fa] text-[#062e6f]';
+                advBtn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors text-[#8e919a] hover:text-[#e2e2e9]';
+            } else {
+                routesView.classList.add('hidden');
+                advView.classList.remove('hidden');
+                advBtn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors bg-[#a8c7fa] text-[#062e6f]';
+                routesBtn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors text-[#8e919a] hover:text-[#e2e2e9]';
+                fetchRawConfig();
+            }
+        }
+
+        async function fetchRoutes() {
+            try {
+                const res = await fetch('/api/routes');
+                routes = await res.json();
+                renderRoutes();
+            } catch (err) {
+                showAlert('خطای شبکه', 'دریافت مسیرها با خطا مواجه شد', 'error');
+            }
+        }
+
+        async function syncRoutesToServer() {
+            try {
+                const res = await fetch('/api/routes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(routes)
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showAlert('به‌روزرسانی', 'تغییرات ذخیره و روی انجینکس اعمال گردید', 'success');
+                    renderRoutes();
+                } else {
+                    showAlert('خطا در انجینکس', data.message, 'error');
+                }
+            } catch (err) {
+                showAlert('خطا', 'عدم برقراری ارتباط با سرور', 'error');
+            }
+        }
+
+        async function fetchRawConfig() {
+            try {
+                const res = await fetch('/api/nginx/raw');
+                const data = await res.json();
+                document.getElementById('nginx-editor').value = data.config;
+            } catch (err) {
+                showAlert('خطا', 'عدم توانایی در دریافت متن کانفیگ', 'error');
+            }
+        }
+
+        async function saveDirectConfig() {
+            const raw = document.getElementById('nginx-editor').value;
+            try {
+                const res = await fetch('/api/nginx/raw', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ config: raw })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showAlert('ذخیره شد', 'فایل کانفیگ مستقیماً در سرور اعمال گردید', 'success');
+                } else {
+                    showAlert('خطا در سینتکس', data.message, 'error');
+                }
+            } catch (err) {
+                showAlert('خطا', 'خطای شبکه در ذخیره فایل کانفیگ', 'error');
+            }
+        }
+
+        async function nginxAction(action) {
+            if (action === 'stop') {
+                customConfirm('توقف سرویس', 'با متوقف کردن سرور، تمامی روت‌ها قطع خواهند شد. ادامه می‌دهید؟', async () => {
+                    executeAction(action);
+                });
+            } else {
+                executeAction(action);
+            }
+        }
+
+        async function executeAction(action) {
+            try {
+                const res = await fetch('/api/nginx/action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action })
+                });
+                const data = await res.json();
+                const statusEl = document.getElementById('service-status-text');
+
+                if (res.ok) {
+                    if (action === 'stop') {
+                        statusEl.innerText = 'متوقف شده (Inactive)';
+                        statusEl.className = 'text-sm font-bold text-[#f2b8b5]';
+                    } else {
+                        statusEl.innerText = 'فعال و در حال اجرا';
+                        statusEl.className = 'text-sm font-bold text-emerald-400';
+                    }
+                    showAlert('عملیات سرور', data.message, 'success');
+                } else {
+                    showAlert('خطای Nginx', data.message, 'error');
+                }
+            } catch (err) {
+                showAlert('خطا', 'ارسال درخواست با خطا مواجه شد', 'error');
+            }
+        }
+
+        function renderRoutes() {
+            const tbody = document.getElementById('routes-table-body');
+            const search = (document.getElementById('search-input').value || '').trim().toLowerCase();
+            tbody.innerHTML = '';
+
+            const filtered = routes.filter(r => 
+                r.path.toLowerCase().includes(search) || 
+                r.targetPort.toString().includes(search) || 
+                r.listenPort.toString().includes(search) ||
+                (r.desc && r.desc.toLowerCase().includes(search))
+            );
+
+            filtered.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-[#20232b]/60 transition-colors';
+                tr.innerHTML = `
+                    <td class="py-3 px-5 font-medium text-amber-300">${toPersianDigits(r.listenPort)}</td>
+                    <td class="py-3 px-5 text-[#a8c7fa] font-mono text-xs" dir="ltr">${r.path}</td>
+                    <td class="py-3 px-5 font-medium text-emerald-300">${toPersianDigits(r.targetPort)}</td>
+                    <td class="py-3 px-5 text-[#8e919a]">${r.desc || '-'}</td>
+                    <td class="py-3 px-5 text-center">
+                        <div class="flex items-center justify-center gap-3">
+                            <button onclick="editRoute(${r.id})" class="text-xs text-[#a8c7fa] hover:underline">ویرایش</button>
+                            <span class="text-[#44474f]">|</span>
+                            <button onclick="deleteRoute(${r.id})" class="text-xs text-[#f2b8b5] hover:underline">حذف</button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('stat-total').innerText = toPersianDigits(routes.length);
+            const uniquePorts = new Set(routes.map(r => r.listenPort));
+            document.getElementById('stat-ports').innerText = toPersianDigits(uniquePorts.size);
+        }
+
+        function openModal() {
+            document.getElementById('route-id').value = '';
+            document.getElementById('modal-title').innerText = 'تعریف مسیر جدید';
+            document.getElementById('route-listen-port').value = '80';
+            document.getElementById('route-path').value = '';
+            document.getElementById('route-target-port').value = '';
+            document.getElementById('route-desc').value = '';
+            document.getElementById('route-modal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('route-modal').classList.add('hidden');
+        }
+
+        function editRoute(id) {
+            const item = routes.find(r => r.id === id);
+            if (!item) return;
+
+            document.getElementById('route-id').value = item.id;
+            document.getElementById('modal-title').innerText = 'ویرایش مسیر';
+            document.getElementById('route-listen-port').value = item.listenPort;
+            document.getElementById('route-path').value = item.path;
+            document.getElementById('route-target-port').value = item.targetPort;
+            document.getElementById('route-desc').value = item.desc || '';
+            document.getElementById('route-modal').classList.remove('hidden');
+        }
+
+        function saveRoute(e) {
+            e.preventDefault();
+            const id = document.getElementById('route-id').value;
+            const listenPort = parseInt(document.getElementById('route-listen-port').value, 10);
+            let path = document.getElementById('route-path').value.trim();
+            if (!path.startsWith('/')) path = '/' + path;
+            const targetPort = parseInt(document.getElementById('route-target-port').value, 10);
+            const desc = document.getElementById('route-desc').value.trim();
+
+            if (isNaN(listenPort) || listenPort < 1 || listenPort > 65535 || isNaN(targetPort) || targetPort < 1 || targetPort > 65535) {
+                showAlert('خطای پورت', 'پورت‌های ورودی و مقصد باید اعدادی بین ۱ تا ۶۵۵۳۵ باشند', 'error');
+                return;
+            }
+
+            if (id) {
+                const idx = routes.findIndex(r => r.id == id);
+                if (idx !== -1) {
+                    routes[idx] = { id: parseInt(id, 10), listenPort, path, targetPort, desc };
+                }
+            } else {
+                const duplicate = routes.find(r => r.listenPort === listenPort && r.path === path);
+                if (duplicate) {
+                    showAlert('مسیر تکراری', `مسیر ${path} قبلاً ثبت گردیده است`, 'warning');
+                    return;
+                }
+                routes.push({ id: Date.now(), listenPort, path, targetPort, desc });
+            }
+
+            closeModal();
+            syncRoutesToServer();
+        }
+
+        function deleteRoute(id) {
+            const item = routes.find(r => r.id === id);
+            if (!item) return;
+
+            customConfirm('حذف مسیر', `آیا از حذف مسیر ${item.path} اطمینان دارید؟`, () => {
+                routes = routes.filter(r => r.id !== id);
+                syncRoutesToServer();
+            });
+        }
+    </script>
+</body>
+</html>
