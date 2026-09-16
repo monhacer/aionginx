@@ -11,8 +11,14 @@ echo "=================================================="
 echo "      Nginx Route Manager Installation Script     "
 echo "=================================================="
 
-# Prompt for panel port with 9090 as default
-read -r -p "Enter web panel port [Default: 9090]: " INPUT_PORT
+# Read interactively even when executed via curl | bash
+if [ -c /dev/tty ]; then
+  read -r -p "Enter web panel port [Default: 9090]: " INPUT_PORT < /dev/tty || INPUT_PORT=""
+else
+  read -r -p "Enter web panel port [Default: 9090]: " INPUT_PORT || INPUT_PORT=""
+fi
+
+INPUT_PORT=$(echo "$INPUT_PORT" | tr -d '\r\n ')
 PANEL_PORT=${INPUT_PORT:-9090}
 
 # Validate port number
