@@ -87,6 +87,16 @@ def apply_nginx_config(content):
 
     subprocess.run(["systemctl", "reload", "nginx"], check=True)
 
+def init_system():
+    routes = load_routes()
+    if not os.path.exists(DATA_FILE):
+        save_routes_to_disk(routes)
+    try:
+        conf_content = generate_nginx_conf(routes)
+        apply_nginx_config(conf_content)
+    except Exception as e:
+        print(f"Warning on initial sync: {e}")
+
 @app.route("/")
 def index():
     html_path = "/opt/nginx-manager/index.html"
@@ -155,5 +165,6 @@ def nginx_control():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
+    init_system()
     panel_port = int(os.environ.get("PANEL_PORT", 9090))
     app.run(host="0.0.0.0", port=panel_port)
