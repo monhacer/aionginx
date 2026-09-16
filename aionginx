@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+set -e
+
+AUTH_FILE="/opt/nginx-manager/auth.json"
+SERVICE_NAME="nginx-manager.service"
+
+GREEN="\033[0;32m"
+RED="\033[0;31m"
+YELLOW="\033[1;33m"
+CYAN="\033[0;36m"
+NC="\033[0m"
+
+show_header() {
+    clear
+    echo "=================================================="
+    echo "               AIONGINX CLI MANAGER               "
+    echo "=================================================="
+}
+
+check_service_status() {
+    echo ""
+    echo -e "${CYAN}>>> Checking System & Services Status...${NC}"
+    echo "--------------------------------------------------"
+    
+    if systemctl is-active --quiet nginx; then
+        echo -e "Nginx Service       : [ ${GREEN}ACTIVE / RUNNING${NC} ]"
+    else
+        echo -e "Nginx Service       : [ ${RED}INACTIVE / STOPPED${NC} ]"
+    fi
+
+    if systemctl is-active --quiet nginx-manager.service; then
+        echo -e "Web Panel Service   : [ ${GREEN}ACTIVE / RUNNING${NC} ]"
+    else
+        echo -e "Web Panel Service   : [ ${RED}INACTIVE / STOPPED${NC} ]"
+    fi
+
+    echo "--------------------------------------------------"
+    echo -e "${YELLOW}>>> Active Listening Ports:${NC}"
+    if command -v ss >/dev/null 2>&1; then
+        ss -tuln | head -n 12
+    elif command -v netstat >/dev/null 2>&1; then
+        netstat -tuln | head -n 12
+    fi
+
+    echo "--------------------------------------------------"
+    echo -e "${CYAN}>>> Recent Nginx Logs:${NC}"
+    systemctl status nginx --no-pager -n 5 || true
+
+    echo ""
+    read -r -p "Press Enter to return to menu..."
+}
+
+change_credentials() {
+    echo ""
+    echo ">>> Change Admin Username & Password"
+    read -r -p "Enter new username: " NEW_USER
+    if [ -z "$NEW_USER" ]; then
+        echo "Error: Username cannot be empty!"
+        read -r -p "Press Enter to return..."
+        return
+    fi
+
+    read -r -s -p "Enter new password: " NEW_PASS
+    echo ""
+    if [ -z "$NEW_PASS" ]; then
+        echo "Error: Password cannot be empty!"
+        read -r -p "Press Enter to return..."
+        return
+    fi
+
+    cat << EOF > "$AUTH_FILE"
+{
+  "username": "$NEW_USER",
+  "password": "$NEW_PASS"
+}
+EOF
+    echo -e "${GREEN}Success: Admin credentials updated successfully.${NC}"
+    read -r -p "Press Enter to continue..."
+}
+
+show_info() {
+    echo ""
+    echo ">>> System Information"
+    SERVER_IP=$(curl -s https://api.ipify.org || hostname -I | awk '{print $1}')
+    PANEL_PORT=$(grep "Environment=\"PANEL_PORT=" /etc/systemd/system/nginx-manager.service 2>/dev/null | cut -d'=' -f3 | tr -d '"' || echo "9090")
+    CURRENT_USER=$(grep -o '"username": *"[^"]*"' "$AUTH_FILE" 2>/dev/null | cut -d'"' -f4 || echo "admin")
+    
+    echo "Panel URL : http://${SERVER_IP}:${PANEL_PORT}"
+    echo "Username  : $CURRENT_USER"
+    echo "Status    : $(systemctl is-active nginx-manager.service 2>/dev/null || echo "not found")"
+    echo "Nginx     : $(systemctl is-active nginx 2>/dev/null || echo "not found")"
+    echo ""
+    read -r -p "Press Enter to continue..."
+}
+
+change_panel_port() {
+    echo ""
+    read -r -p "Enter new panel port (1-65535): " NEW_PORT
+    if ! [[ "$NEW_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_PORT" -lt 1 ] || [ "$NEW_PORT" -gt 65535 ]; then
+        echo "Error: Invalid port number!"
+        read -r -p "Press Enter to continue..."
+        return
+    fi
+
+    sed -i "s/Environment=\"PANEL_PORT=[0-9]*\"/Environment=\"PANEL_PORT=$NEW_PORT\"/g" /etc/systemd/system/nginx-manager.service
+    
+    if command -v ufw >/dev/null 2>&1; then
+        if ufw status | grep -q "Status: active"; then
+            ufw allow "$NEW_PORT"/tcp
+        fi
+    fi
+
+    systemctl daemon-reload
+    systemctl restart nginx-manager.service
+    echo -e "${GREEN}Success: Web panel port changed to $NEW_PORT${NC}"
+    read -r -p "Press Enter to continue..."
+}
+
+uninstall_panel() {
+    echo ""
+    echo "=================================================="
+    echo "               UNINSTALL AIONGINX                 "
+    echo "=================================================="
+    echo "WARNING: This will remove the Web Panel service and files."
+    echo "Nginx itself and your existing routes will remain intact."
+    echo "=================================================="
+    read -r -p "Are you sure you want to proceed? (y/N): " CONFIRM
+
+    if [[ "$CONFIRM" =~ ^[yY]$ ]]; then
+        echo ""
+        echo "[1/4] Stopping and disabling panel service..."
+        PANEL_PORT=$(grep "Environment=\"PANEL_PORT=" /etc/systemd/system/nginx-manager.service 2>/dev/null | cut -d'=' -f3 | tr -d '"' || echo "")
+        
+        systemctl stop nginx-manager.service 2>/dev/null || true
+        systemctl disable nginx-manager.service 2>/dev/null || true
+        rm -f /etc/systemd/system/nginx-manager.service
+        systemctl daemon-reload
+
+        echo "[2/4] Removing panel files and data..."
+        rm -rf /opt/nginx-manager
+
+        if [ -n "$PANEL_PORT" ] && command -v ufw >/dev/null 2>&1; then
+            if ufw status | grep -q "Status: active"; then
+                echo "[3/4] Removing UFW firewall rule for port $PANEL_PORT..."
+                ufw delete allow "$PANEL_PORT"/tcp 2>/dev/null || true
+            fi
+        fi
+
+        echo "[4/4] Removing aionginx CLI tool..."
+        rm -f /usr/local/bin/aionginx
+
+        echo "=================================================="
+        echo -e "${GREEN}      AioNginx has been completely removed!       ${NC}"
+        echo "=================================================="
+        exit 0
+    else
+        echo "Uninstall canceled."
+        sleep 1
+    fi
+}
+
+while true; do
+    show_header
+    echo "1) View Panel URL & Credentials"
+    echo "2) Change Admin Username and Password"
+    echo "3) Change Web Panel Port"
+    echo "4) Restart Nginx Service"
+    echo "5) Restart Web Panel Service"
+    echo "6) Check Services Status (Detailed)"
+    echo "7) Test Nginx Syntax (nginx -t)"
+    echo "8) Uninstall Panel Completely"
+    echo "0) Exit"
+    echo "=================================================="
+    read -r -p "Please select an option [0-8]: " OPTION
+
+    case "$OPTION" in
+        1) show_info ;;
+        2) change_credentials ;;
+        3) change_panel_port ;;
+        4)
+            systemctl restart nginx
+            echo "Nginx restarted."
+            sleep 1
+            ;;
+        5)
+            systemctl restart nginx-manager.service
+            echo "Panel service restarted."
+            sleep 1
+            ;;
+        6) check_service_status ;;
+        7)
+            nginx -t
+            echo ""
+            read -r -p "Press Enter to continue..."
+            ;;
+        8) uninstall_panel ;;
+        0)
+            echo "Exiting."
+            exit 0
+            ;;
+        *)
+            echo "Invalid option. Please try again."
+            sleep 1
+            ;;
+    esac
+done
